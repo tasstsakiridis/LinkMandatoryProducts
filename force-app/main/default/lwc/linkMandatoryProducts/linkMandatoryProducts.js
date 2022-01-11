@@ -8,8 +8,16 @@ import linkProducts from '@salesforce/apex/LinkMandatoryProducts_Controller.link
 import unLinkProducts from '@salesforce/apex/LinkMandatoryProducts_Controller.unLinkProducts';
 
 import OBJ_MANDATORY_PRODUCTS from '@salesforce/schema/Mandatory_Products__c';
+import OBJ_PRODUCT from '@salesforce/schema/Product__c';
 
 import FLD_PRODUCT_STATUS from '@salesforce/schema/Mandatory_Products__c.Product_Status__c';
+import FLD_PRODUCT_USED_FOR from '@salesforce/schema/Product__c.Used_For__c';
+
+import LABEL_ALL_PRODUCTS from '@salesforce/label/c.All_Products';
+import LABEL_MANDATORY from '@salesforce/label/c.Mandatory';
+import LABEL_SHOW from '@salesforce/label/c.Show';
+import LABEL_STATUS from '@salesforce/label/c.Status';
+import LABEL_USED_FOR from '@salesforce/label/c.Used_For';
 
 const columns = [
     { label: 'Product', fieldName: 'name' },
@@ -18,9 +26,11 @@ const columns = [
 
 export default class LinkMandatoryProducts extends LightningElement {
     labels = {
-        allproducts: { label: 'All products' },
-        mandatory: { label: 'Mandatory' },
-        show: { label: 'Show' }
+        allproducts: { label: LABEL_ALL_PRODUCTS },
+        mandatory: { label: LABEL_MANDATORY },
+        show: { label: LABEL_SHOW },
+        status: { label: LABEL_STATUS },
+        usedFor: { label: LABEL_USED_FOR }
     };
 
     @api
@@ -36,6 +46,8 @@ export default class LinkMandatoryProducts extends LightningElement {
     showingAllProducts = false;
     productStatus = 'Mandatory';
     productStatusOptions;
+    usedFor;
+    usedForOptions;
 
     data;
     columns = columns;
@@ -45,20 +57,34 @@ export default class LinkMandatoryProducts extends LightningElement {
     }
 
     @wire(getObjectInfo, { objectApiName: OBJ_MANDATORY_PRODUCTS })
-    objectInfo;
+    mandatoryProductObjectInfo;
+    
+    @wire(getObjectInfo, { objectApiName: OBJ_PRODUCT })
+    productObjectInfo;
 
-    get recordTypeId() {
-        console.log('objectInfo', this.objectInfo);
+    get mpRecordTypeId() {
+        console.log('mpObjectInfo', this.mandatoryProductObjectInfo);
         // Returns a map of record type Ids 
-        if (this.objectInfo && this.objectInfo.data) {
-            const rtis = this.objectInfo.data.recordTypeInfos;
+        if (this.mandatoryProductObjectInfo && this.mandatoryProductObjectInfo.data) {
+            const rtis = this.mandatoryProductObjectInfo.data.recordTypeInfos;
             return Object.keys(rtis).find(rti => rtis[rti].name === 'Master');    
         } else {
             return '';
         }
     }
 
-    @wire(getPicklistValues, { recordTypeId: '$recordTypeId', fieldApiName: FLD_PRODUCT_STATUS })
+    get productRecordTypeId() {
+        console.log('productObjectInfo', this.productObjectInfo);
+        // Returns a map of record type Ids 
+        if (this.productObjectInfo && this.productObjectInfo.data) {
+            const rtis = this.productObjectInfo.data.recordTypeInfos;
+            return Object.keys(rtis).find(rti => rtis[rti].name === 'Wet Goods');    
+        } else {
+            return '';
+        }
+    }
+
+    @wire(getPicklistValues, { recordTypeId: '$mpRecordTypeId', fieldApiName: FLD_PRODUCT_STATUS })
     getWiredProductStatusValues({error, data}) {
         console.log('picklistvalues', data);
         if (data) {
@@ -66,6 +92,17 @@ export default class LinkMandatoryProducts extends LightningElement {
             this.productStatusOptions = data.values;            
         } else if (error) {
             this.productStatusOptions = undefined;
+            this.error = error;
+        }
+    }
+    @wire(getPicklistValues, { recordTypeId: '$productRecordType', fieldApiName: FLD_PRODUCT_USED_FOR })
+    getWiredUsedForValues({error, data}) {
+        console.log('product used for value', data);
+        if (data) {
+            this.error = undefined;
+            this.usedForOptions = data.values;
+        } else if (error) {
+            this.usedForOptions = undefined;
             this.error = error;
         }
     }
@@ -128,6 +165,11 @@ export default class LinkMandatoryProducts extends LightningElement {
     handleProductStatusChange(ev) {
         this.productStatus = ev.detail.value;
         console.log('productStatus', this.productStatus);
+    }
+    hamdleUsedForChange(ev) {
+        this.usedFor = ev.detail.value;
+        const filteredProducts = this.allProducts.filter(p => p.Used_For__c == this.usedFor);
+        this.products = [...filteredProducts];
     }
     handleBrandChange(ev) {
         this.selectedBrand = ev.detail.value;

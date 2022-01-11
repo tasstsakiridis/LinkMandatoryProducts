@@ -9,20 +9,45 @@ public with sharing class LinkMandatoryProducts_Controller {
         try {
             Map<String, Object> result = new Map<String, Object>();
 
-            Account account = [SELECT Id, Name, Market__c FROM Account WHERE Id =:accountId];
+            Account account = [SELECT Id, Name, Market__c, Channel__c FROM Account WHERE Id =:accountId];
             result.put('account', account);
-
+            
+            String accountChannel = account.Channel__c;
             String marketId = account.Market__c;
             if (String.isEmpty(account.Market__c)) {
                 List<Market__c> markets = [SELECT Id FROM Market__c WHERE Name = 'Australia' LIMIT 1];
                 marketId = markets[0].Id;
             }
 
-            List<Product__c> products = [SELECT Id, Name 
+            Map<String, Schema.RecordTypeInfo> rtList = BF_Configuration_Item__c.SObjectType.getDescribe().getRecordTypeInfosByName();
+            String rtFilter = rtList.get('Filter').getRecordTypeId();
+
+            List<BF_Configuration_Item__c> configs = [SELECT Id, Object__c, FieldType__c, FieldName__c, FieldValue__c, Operator__c, RecordTypeId, Filter_Type__c,
+                                                            Referenced_Object__c, Referenced_Field__c 
+                                                        FROM BF_Configuration_Item__c 
+                                                        WHERE BF_Configuration__r.Market__c =:marketId 
+                                                          AND Is_Active__c = true 
+                                                          AND RecordTypeId =:rtFilter
+                                                          AND (BF_Configuration__r.Source_Object__c = 'Product__c' OR BF_Configuration__r.Source_Object__c = 'Mandatory_Products__c')
+                                                          AND (BF_Configuration__r.Linked_Object__c = 'Product__c' OR BF_Configuration__r.Linked_Object__c = 'Mandatory_Products__c')];
+
+            String soql = 'SELECT Id, Name, Brand__c, Used_For__c FROM Product__c ';
+            soql += ' WHERE Market__c =:marketId AND IsActive__c = true AND (Channel__c =:accountChannel OR Channel__c = \'Both\')';
+            if (configs != null && configs.size() > 0) {
+                String whereClause = BF_CONFIGURATIONS_HELPER.buildQueryFromConfigurations(configs, '');
+                System.debug('whereClause: ' + whereClause);
+                soql += ' AND ' + whereClause;
+            }
+            System.debug('soql: ' + soql);
+            List<Product__c> products = Database.query(soql);
+            /*
+            List<Product__c> products = [SELECT Id, Name, Brand__c, Used_For__c 
                                            FROM Product__c 
                                           WHERE Market__c =:marketId
                                             AND IsActive__c = true
+                                            AND (Channel__c =:accountChannel OR Channel__c = 'Both')
                                        ORDER BY Name];
+            */                                       
             result.put('products', products);
 
             List<Mandatory_Products__c> mandatoryProducts = [SELECT Id, Custom_Product__c, Product_Name__c, Product_Status__c, 
