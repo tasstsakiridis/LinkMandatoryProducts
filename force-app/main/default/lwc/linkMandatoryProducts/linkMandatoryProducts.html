@@ -16,11 +16,29 @@
                         onchange={toggleShownProducts}>
         </lightning-input>
         <div class="slds-p-around_small">
-            <lightning-combobox name="productStatus" label="Status" 
+            <lightning-combobox name="productStatus" label={labels.status.label}
                                 value={productStatus}
                                 options={productStatusOptions}
                                 onchange={handleProductStatusChange}>                            
             </lightning-combobox>
+            <!--
+            <lightning-layout>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-combobox name="productStatus" label={labels.status.label}
+                                        value={productStatus}
+                                        options={productStatusOptions}
+                                        onchange={handleProductStatusChange}>                            
+                    </lightning-combobox>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-combobox name="usedFor" label={labels.usedFor.label} 
+                                        value={productUsedFor}
+                                        options={usedForOptions}
+                                        onchange={handleUsedForChange}>                            
+                    </lightning-combobox>                    
+                </lightning-layout-item>
+            </lightning-layout>
+        -->
         </div>
         <div style="height: 400px;">
             <lightning-datatable key-field="id"
