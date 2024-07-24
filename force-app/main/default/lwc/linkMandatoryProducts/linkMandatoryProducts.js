@@ -15,13 +15,14 @@ import FLD_PRODUCT_USED_FOR from '@salesforce/schema/Product__c.Used_For__c';
 
 import LABEL_ALL_PRODUCTS from '@salesforce/label/c.All_Products';
 import LABEL_MANDATORY from '@salesforce/label/c.Mandatory';
+import LABEL_PRODUCT from '@salesforce/label/c.Product';
 import LABEL_SHOW from '@salesforce/label/c.Show';
 import LABEL_STATUS from '@salesforce/label/c.Status';
 import LABEL_USED_FOR from '@salesforce/label/c.Used_For';
 
 const columns = [
-    { label: 'Product', fieldName: 'name' },
-    { label: 'Status', fieldName: 'status' }
+    { label: LABEL_PRODUCT, fieldName: 'name' },
+    { label: LABEL_STATUS, fieldName: 'status' }
 ];
 
 export default class LinkMandatoryProducts extends LightningElement {
@@ -49,7 +50,7 @@ export default class LinkMandatoryProducts extends LightningElement {
     usedFor;
     usedForOptions;
 
-    data;
+    data = [];
     columns = columns;
 
     get accountName() {
@@ -59,20 +60,20 @@ export default class LinkMandatoryProducts extends LightningElement {
     @wire(getObjectInfo, { objectApiName: OBJ_MANDATORY_PRODUCTS })
     mandatoryProductObjectInfo;
     
-    @wire(getObjectInfo, { objectApiName: OBJ_PRODUCT })
-    productObjectInfo;
+    //@wire(getObjectInfo, { objectApiName: OBJ_PRODUCT })
+    //productObjectInfo;
 
     get mpRecordTypeId() {
         console.log('mpObjectInfo', this.mandatoryProductObjectInfo);
         // Returns a map of record type Ids 
         if (this.mandatoryProductObjectInfo && this.mandatoryProductObjectInfo.data) {
             const rtis = this.mandatoryProductObjectInfo.data.recordTypeInfos;
-            return Object.keys(rtis).find(rti => rtis[rti].name === 'Master');    
+            return Object.keys(rtis).find(rti => rtis[rti].name === 'Master' || rtis[rti].master == true);    
         } else {
             return '';
         }
     }
-
+    /*
     get productRecordTypeId() {
         console.log('productObjectInfo', this.productObjectInfo);
         // Returns a map of record type Ids 
@@ -83,7 +84,7 @@ export default class LinkMandatoryProducts extends LightningElement {
             return '';
         }
     }
-
+    */
     @wire(getPicklistValues, { recordTypeId: '$mpRecordTypeId', fieldApiName: FLD_PRODUCT_STATUS })
     getWiredProductStatusValues({error, data}) {
         console.log('picklistvalues', data);
@@ -95,6 +96,7 @@ export default class LinkMandatoryProducts extends LightningElement {
             this.error = error;
         }
     }
+    /*
     @wire(getPicklistValues, { recordTypeId: '$productRecordType', fieldApiName: FLD_PRODUCT_USED_FOR })
     getWiredUsedForValues({error, data}) {
         console.log('product used for value', data);
@@ -106,7 +108,7 @@ export default class LinkMandatoryProducts extends LightningElement {
             this.error = error;
         }
     }
-
+    */
     wiredData;
     @wire(getData, { accountId: '$recordId' })
     getWiredData(value) {
@@ -187,8 +189,8 @@ export default class LinkMandatoryProducts extends LightningElement {
             if (this.mandatoryProducts && this.mandatoryProducts.length > 0) {
                 filteredProducts = this.allProducts.filter(p => !this.mandatoryProducts.find(mp => mp.Custom_Product__c == p.Id));                
             }
-            console.log('filteredProducts', filteredProducts);
-            this.data = filteredProducts.map(p => {
+            console.log('filteredProducts', filteredProducts);            
+            const d = filteredProducts.map(p => {
                 return {
                     id: '',
                     name: p.Name,
@@ -196,16 +198,20 @@ export default class LinkMandatoryProducts extends LightningElement {
                     status: '',
                 };
             });
+            console.log('[showing all products] d', d);
+            this.data = [...d];
         } else {
             // Show Mandatory products
-            this.data = this.mandatoryProducts.map(mp => {                
+            const d = this.mandatoryProducts.map(mp => {                
                 return {
                     id: mp.Id,
                     name: mp.Product_Name__c,
                     productId: mp.Custom_Product__c,
                     status: mp.Product_Status__c
                 };
-            });                
+            });    
+            console.log('[showing mandatory products] d', d);
+            this.data = [...d];            
         }
 
         this.isWorking = false;
@@ -220,18 +226,20 @@ export default class LinkMandatoryProducts extends LightningElement {
         linkProducts({accountId: this.recordId, productStatus: this.productStatus, productIds: ids })
             .then(result => {
                 this.isWorking = false;
-                this.data = result.mandatoryProducts.map(mp => {
-                    return {
-                        id: mp.Id,                        
-                        name: mp.Product_Name__c,
-                        productId: mp.Custom_Product__c
-                    };
-                });
-                refreshApex(this.wiredData);
                 if (result.status == 'OK') {
                     this.showToast('success', 'Success', 'All products linked');
+                    this.data = result.mandatoryProducts.map(mp => {
+                        return {
+                            id: mp.Id,                        
+                            name: mp.Product_Name__c,
+                            productId: mp.Custom_Product__c
+                        };
+                    });
+                    refreshApex(this.wiredData);
+                } else if (result.status == 'BULK') {
+                    this.showToast('info', 'Warning', result.msg);
                 } else {
-                    this.showToast('error', 'Warning', 'Error');
+                    this.showToast('error', 'Warning', result.msg);
                 }
             })
             .catch(error => {
@@ -253,17 +261,19 @@ export default class LinkMandatoryProducts extends LightningElement {
             unLinkProducts({accountId: this.recordId, ids: ids, productIds: productIds })
                 .then(result => {
                     this.isWorking = false;
-                    this.data = result.mandatoryProducts.map(mp => {
-                        return {
-                            id: mp.Id,                        
-                            name: mp.Product_Name__c,
-                            productId: mp.Custom_Product__c
-                        };
-                    });
                     if (result.status == 'OK') {
                         this.showToast('success', 'Success', 'Selected products removed');
+                        this.data = result.mandatoryProducts.map(mp => {
+                            return {
+                                id: mp.Id,                        
+                                name: mp.Product_Name__c,
+                                productId: mp.Custom_Product__c
+                            };
+                        });
+                    } else if (result.status == 'BULK') {
+                        this.showToast('info', 'Warning', result.msg);
                     } else {
-                        this.showToast('error', 'Warning', 'Error');
+                        this.showToast('error', 'Warning', result.msg);
                     }
                 })
                 .catch(error => {

@@ -8,7 +8,7 @@ public with sharing class LinkMandatoryProducts_Controller {
     public static Map<String, Object> getData(String accountId){
         try {
             Map<String, Object> result = new Map<String, Object>();
-
+            
             Account account = [SELECT Id, Name, Market__c, Channel__c FROM Account WHERE Id =:accountId];
             result.put('account', account);
             
@@ -67,12 +67,14 @@ public with sharing class LinkMandatoryProducts_Controller {
     @AuraEnabled
     public static Map<String, Object> linkProducts(String accountId, String productStatus, List<String> productIds){
         try {
+            String msg = '';
+            Map<String, Object> result = new Map<String, Object>();
             List<String> childAccountIds = new List<String>();
 
             Account theAccount = [SELECT Id, Name, RecordTypeId, RecordType.Name FROM Account WHERE Id =:accountId];
             List<Account> childAccounts;
             if (theAccount.RecordType.Name == 'Parent') {
-                childAccounts = [SELECT Id FROM Account WHERE Id =:accountId OR ParentId =:accountId];
+                childAccounts = [SELECT Id, Name FROM Account WHERE Id =:accountId OR ParentId =:accountId];
                 for(Account a : childAccounts) {
                     childAccountIds.add(a.Id);
                 }                
@@ -86,42 +88,56 @@ public with sharing class LinkMandatoryProducts_Controller {
                                                         FROM Mandatory_Products__c
                                                         WHERE Account__c =:childAccountIds];
 
-            Boolean found = false;
-            Map<String, Object> result = new Map<String, Object>();
-            List<Mandatory_Products__c> mandatoryProducts = new List<Mandatory_Products__c>();
-            for(Account a : childAccounts) {
+            if (childAccounts.size() <= 10) {
+                Boolean found = false;
+                List<Mandatory_Products__c> mandatoryProducts = new List<Mandatory_Products__c>();
+                for(Account a : childAccounts) {
 
-                for(String id : productIds) {
-                    found = false;
-                    for(Mandatory_Products__c mp : existingMP) {
-                        if (mp.Account__c == a.Id && mp.Custom_Product__c == id) {
+                    for(String id : productIds) {
+                        found = false;
+                        for(Mandatory_Products__c mp : existingMP) {
+                            if (mp.Account__c == a.Id && mp.Custom_Product__c == id) {
+                                mp.Product_Status__c = productStatus;
+                                mandatoryProducts.add(mp);
+                                found = true; break;
+                            }
+                        }
+                        if (!found) {
+                            Mandatory_Products__c mp = new Mandatory_Products__c();
+                            mp.Account__c = a.Id;
+                            mp.Custom_Product__c = id;
                             mp.Product_Status__c = productStatus;
-                            mandatoryProducts.add(mp);
-                            found = true; break;
+            
+                            mandatoryProducts.add(mp);    
                         }
                     }
-                    if (!found) {
-                        Mandatory_Products__c mp = new Mandatory_Products__c();
-                        mp.Account__c = a.Id;
-                        mp.Custom_Product__c = id;
-                        mp.Product_Status__c = productStatus;
-        
-                        mandatoryProducts.add(mp);    
-                    }
                 }
-            }
-            if (mandatoryProducts.size() > 0) {
-                upsert mandatoryProducts;
+                if (mandatoryProducts.size() > 0) {
+                    upsert mandatoryProducts;
+                }
+
+                msg = System.Label.MandatoryProductsCreated;
+                msg = msg.replace('%0', String.valueOf(mandatoryProducts.size()));
+                result.put('mandatoryProducts', mandatoryProducts);
+
+                mandatoryProducts = [SELECT Id, Custom_Product__c, Product_Name__c, Product_Status__c, 
+                                            Listing_In__c, Listing_Out__c
+                                        FROM Mandatory_Products__c
+                                        WHERE Account__c =:accountId
+                                    ORDER BY Product_Name__c];
+
+                result.put('status', 'OK');
+            } else {
+                String userName = UserInfo.getName();
+                String userEmail = UserInfo.getUserEmail();
+                LinkMandatoryProducts_BatchController bc = new LinkMandatoryProducts_BatchController(accountId, theAccount.Name, productStatus, productIds, userName, userEmail);
+                Database.executeBatch(bc, 50);
+
+                msg = 'Batch process started to add selected product as ' + productStatus + ' products for ' + theAccount.Name + ' and any of it\'s child accounts (if any)';
+                result.put('status', 'BULK');
             }
 
-            mandatoryProducts = [SELECT Id, Custom_Product__c, Product_Name__c, Product_Status__c, 
-                                        Listing_In__c, Listing_Out__c
-                                    FROM Mandatory_Products__c
-                                    WHERE Account__c =:accountId
-                                ORDER BY Product_Name__c];
-
-            result.put('mandatoryProducts', mandatoryProducts);
-            result.put('status', 'OK');
+            result.put('msg', msg);
             return result;
         } catch (Exception e) {
             throw new AuraHandledException(e.getMessage());
@@ -131,36 +147,42 @@ public with sharing class LinkMandatoryProducts_Controller {
     @AuraEnabled
     public static Map<String, Object> unLinkProducts(String accountId, List<String> ids, List<String> productIds){
         try {
+            String msg = '';
+            Map<String, Object> result = new Map<String, Object>();
             Map<String, Schema.RecordTypeInfo> rtList = Account.SObjectType.getDescribe().getRecordTypeInfosByName();
             String rtParent = rtList.get('Parent').getRecordTypeId();
 
             Account theAccount = [SELECT Id, Name, RecordTypeId FROM Account WHERE Id =:accountId];
             List<Mandatory_Products__c> toDelete;
             if (theAccount.RecordTypeId == rtParent) {
-                toDelete = [SELECT Id 
-                              FROM Mandatory_Products__c 
-                              WHERE Id =:ids
-                                 OR (Account__r.ParentId =: accountId
-                                AND Custom_Product__c =:productIds)];
+                String userName = UserInfo.getName();
+                String userEmail = UserInfo.getUserEmail();
+                RemoveMandatoryProducts_BatchController bc = new RemoveMandatoryProducts_BatchController(accountId, theAccount.Name, productIds, ids, userName, userEmail);
+                Database.executeBatch(bc, 100);
+
+                msg = 'Batch process started to remove mandatory products for ' + theAccount.Name + ' and it\'s child accounts (if any)';
+                result.put('status', 'BULK');
             } else {
                 toDelete = [SELECT Id, Account__c, Custom_Product__c, Product_Status__c 
                                                         FROM Mandatory_Products__c
                                                         WHERE Id =:ids];
 
+                if (toDelete.size() > 0) {
+                    delete toDelete;
+                }
+                
+
+                List<Mandatory_Products__c> mandatoryProducts = [SELECT Id, Account__c, Custom_Product__c, Product_Name__c, Product_Status__c 
+                                                                    FROM Mandatory_Products__c 
+                                                                    WHERE Account__c =:accountId];
+    
+                result.put('status', 'OK');
+                result.put('mandatoryProducts', mandatoryProducts);
+                msg = System.Label.MandatoryProductsDeleted;
+                msg = msg.replace('%0', String.valueOf(toDelete.size()));
             }
 
-            if (toDelete.size() > 0) {
-                delete toDelete;
-            }
-            
-
-            List<Mandatory_Products__c> mandatoryProducts = [SELECT Id, Account__c, Custom_Product__c, Product_Name__c, Product_Status__c 
-                                                                FROM Mandatory_Products__c 
-                                                                WHERE Account__c =:accountId];
-
-            Map<String, Object> result = new Map<String, Object>();
-            result.put('mandatoryProducts', mandatoryProducts);
-            result.put('status', 'OK');
+            result.put('msg', msg);
             return result;
         } catch (Exception e) {
             throw new AuraHandledException(e.getMessage());
