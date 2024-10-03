@@ -41,9 +41,10 @@
         -->
         </div>
         <div style="height: 400px;">
-            <lightning-datatable key-field="id"
+            <lightning-datatable key-field="productId"
                         data={data}
-                        columns={columns}>
+                        columns={columns}
+                        onrowselection={handleRowSelection}>
             </lightning-datatable>
         </div>
     </lightning-card>

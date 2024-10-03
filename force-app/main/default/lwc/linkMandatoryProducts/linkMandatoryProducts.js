@@ -51,6 +51,8 @@ export default class LinkMandatoryProducts extends LightningElement {
     usedForOptions;
 
     data = [];
+    selectedData = [];
+    currentlySelectedData = [];
     columns = columns;
 
     get accountName() {
@@ -128,8 +130,9 @@ export default class LinkMandatoryProducts extends LightningElement {
                 console.log('mandatoryproducts', this.mandatoryProducts);
 
                 this.showingAllProducts = false;
+                let tableData = [];
                 if (this.mandatoryProducts && this.mandatoryProducts.length > 0) {
-                    this.data = this.mandatoryProducts.map(mp => {
+                    tableData = this.mandatoryProducts.map(mp => {
                         return {
                             id: mp.Id,
                             name: mp.Product_Name__c,
@@ -138,7 +141,7 @@ export default class LinkMandatoryProducts extends LightningElement {
                         };
                     });                
                 } else {
-                    this.data = this.allProducts.map(p => {
+                    tableData = this.allProducts.map(p => {
                         return {
                             id: '',
                             name: p.Name,
@@ -148,9 +151,12 @@ export default class LinkMandatoryProducts extends LightningElement {
                     });
                     this.showingAllProducts = true;
                 }
+                this.data = [...tableData];
                 console.log('data', this.data);
             }catch(ex) {
                 console.log('exception', ex);
+            }finally{
+                this.isWorking = false;
             }
         } else if (value.error) {
             this.error = value.error;
@@ -162,6 +168,41 @@ export default class LinkMandatoryProducts extends LightningElement {
 
     connectedCallback() {
         this.isWorking = true;        
+    }
+
+    handleRowSelection(event) {
+        try {
+            console.log('[handleRowSelection] config', JSON.parse(JSON.stringify(event.detail)));
+            switch (event.detail.config.action) {
+                case 'selectAllRows':
+                    for(let i = 0; i < event.detail.selectedRows.length; i++) {
+                        this.selectedData.push(event.detail.selectedRows[i]);
+                        this.currentlySelectedData.push(event.detail.selectedRows[i]);
+                    }
+                    break;
+
+                case 'deselectAllRows':
+                    this.selectedData = [];
+                    this.currentlySelectedData = [];
+                    break;
+
+                case 'rowSelect':
+                    this.currentlySelectedData = [...event.detail.selectedRows];
+                    break;
+
+                case 'rowDeselect':
+                    const idx = this.currentlySelectedData.findIndex(r => r.productId == event.detail.config.value);
+                    if (idx >= 0) {
+                        this.currentlySelectedData.splice(idx, 1);
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        }catch(ex) {
+            console.log('[handleRowSelection] ex', ex);
+        }
     }
 
     handleProductStatusChange(ev) {
@@ -219,23 +260,22 @@ export default class LinkMandatoryProducts extends LightningElement {
     
     save(event) {
         this.isWorking = true;
-        const selectedRows = this.template.querySelector('lightning-datatable').getSelectedRows();
-        console.log('selectedRows', selectedRows);
-        const ids = selectedRows.map(r => r.productId);
+        //const selectedRows = this.template.querySelector('lightning-datatable').getSelectedRows();
+        //console.log('selectedRows', selectedRows);
+        const ids = this.currentlySelectedData.map(r => r.productId);        
         console.log('ids', ids);
+        
         linkProducts({accountId: this.recordId, productStatus: this.productStatus, productIds: ids })
             .then(result => {
                 this.isWorking = false;
+                console.log('[linkProducts] result', result);
                 if (result.status == 'OK') {
-                    this.showToast('success', 'Success', 'All products linked');
-                    this.data = result.mandatoryProducts.map(mp => {
-                        return {
-                            id: mp.Id,                        
-                            name: mp.Product_Name__c,
-                            productId: mp.Custom_Product__c
-                        };
-                    });
-                    refreshApex(this.wiredData);
+                    try {
+                        this.showToast('success', 'Success', 'All products linked');
+                        refreshApex(this.wiredData);
+                    }catch(ex) {
+                        console.log('[linkProducts] exception', ex);
+                    }
                 } else if (result.status == 'BULK') {
                     this.showToast('info', 'Warning', result.msg);
                 } else {
@@ -245,17 +285,16 @@ export default class LinkMandatoryProducts extends LightningElement {
             .catch(error => {
                 this.isWorking = false;
                 this.error = error;
-                this.showToast('error', 'Warning', error);
+                this.showToast('error', 'Warning', error.body.message);
             });
     }
     unlink() {
         this.isWorking = true;
-        const selectedRows = this.template.querySelector('lightning-datatable').getSelectedRows();
-        console.log('selectedRows', selectedRows);
-        if (selectedRows && selectedRows.length > 0) {
-            const ids = selectedRows.map(r => r.id);
-            const productIds = selectedRows.map(r => r.productId);
-
+        //const selectedRows = this.template.querySelector('lightning-datatable').getSelectedRows();
+        console.log('selectedRows', this.currentlySelectedData);
+        if (this.currentlySelectedData && this.currentlySelectedData.length > 0) {
+            const ids = this.currentlySelectedData.map(r => r.id);
+            const productIds = this.currentlySelectedData.map(r => r.productId);
             console.log('ids', ids);
             console.log('productIds', productIds);
             unLinkProducts({accountId: this.recordId, ids: ids, productIds: productIds })
@@ -263,13 +302,7 @@ export default class LinkMandatoryProducts extends LightningElement {
                     this.isWorking = false;
                     if (result.status == 'OK') {
                         this.showToast('success', 'Success', 'Selected products removed');
-                        this.data = result.mandatoryProducts.map(mp => {
-                            return {
-                                id: mp.Id,                        
-                                name: mp.Product_Name__c,
-                                productId: mp.Custom_Product__c
-                            };
-                        });
+                        refreshApex(this.wiredData);
                     } else if (result.status == 'BULK') {
                         this.showToast('info', 'Warning', result.msg);
                     } else {
@@ -279,7 +312,7 @@ export default class LinkMandatoryProducts extends LightningElement {
                 .catch(error => {
                     this.isWorking = false;
                     this.error = error;
-                    this.showToast('error', 'Warning', error);
+                    this.showToast('error', 'Warning', error.body.message);
                 });
         }
 
